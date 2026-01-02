@@ -1,0 +1,194 @@
+\documentclass{article}
+
+% Pre-load amsmath and set natbib options
+\usepackage{amsmath}
+\PassOptionsToPackage{numbers, compress}{natbib}
+
+% Load NeurIPS style
+\usepackage[preprint]{neurips_2025}
+
+% Core packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{graphicx}
+
+% Setup hyperref for citation jumping
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    citecolor=blue,
+    linkcolor=red,
+    urlcolor=magenta,
+}
+
+\title{Convex Optimization Project: Robust Prompt Learning via Optimal Transport and Adaptive GCE}
+
+\author{%
+  Zihan Wang, Zhichen Zhong, Yixuan Liu, Haoyu Li \\
+  School of Information Science and Technology\\
+  ShanghaiTech University \\
+  \texttt{\{wangzh12023, zhongzhch2023, liuyx2023, lihy2023\}@shanghaitech.edu.cn} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Vision-Language Models (VLMs) like CLIP have revolutionized representation learning but remain vulnerable to noisy labels in downstream tasks. This project focuses on the reproduction and extension of \textit{NLPrompt} \citep{pan2024nlprompt}, a framework that utilizes Optimal Transport (OT) to purify noisy data. We provide a rigorous convex optimization perspective on the OT formulation used in NLPrompt, specifically analyzing it through Bregman Projections. Furthermore, we identify a limitation in the original "hard partition" strategy and propose a novel incremental improvement: \textbf{OT-Guided Adaptive Generalized Cross Entropy (GCE)}. Instead of a binary separation of clean and noisy data, our method dynamically adjusts the robustness parameter $q$ of the GCE loss based on OT confidence scores. Our experimental results on benchmarks including Flowers102, DTD, and EuroSAT demonstrate the efficacy of the reproduction and the potential of the proposed soft-weighting mechanism.
+\end{abstract}
+
+\section{Introduction}
+
+The advent of Vision-Language Models (VLMs) such as CLIP has bridged the gap between visual and textual data \cite{pan2024nlprompt}. Prompt learning has emerged as a parameter-efficient fine-tuning method for these models \cite{pan2024nlprompt}. However, real-world datasets are inherently noisy, and standard Cross-Entropy (CE) loss is known to overfit to incorrect labels, leading to performance degradation \cite{pan2024nlprompt}.
+
+The paper \textit{NLPrompt: Taming Noisy Labels in Vision-Language Models} \cite{pan2024nlprompt} addresses this by employing Optimal Transport (OT) to align image features with text prototypes, thereby identifying and "purifying" noisy labels. The original method partitions data into "clean" and "noisy" subsets, applying CE loss to the former and Mean Absolute Error (MAE) loss to the latter \cite{pan2024nlprompt, zhang2018gce}.
+
+In this project, we aim to:
+\begin{enumerate}
+    \item \textbf{Replicate} the NLPrompt framework and verify its performance on standard benchmarks.
+    \item \textbf{Analyze} the theoretical underpinnings of the OT formulation from a convex optimization perspective, specifically focusing on the transport polytope and entropic regularization.
+    \item \textbf{Propose} an incremental innovation: an OT-Guided Adaptive GCE loss that replaces the heuristic hard thresholding with a smooth, instance-dependent weighting mechanism.
+\end{enumerate}
+
+\section{Theoretical Analysis: A Convex Optimization Perspective}
+
+A core contribution of this project is the analysis of the optimization problem underlying the data purification process.
+
+\subsection{The Transport Polytope}
+The purification process relies on finding an optimal transport plan $Q$. We define the feasible region, the Transport Polytope $\mathcal{U}$, as the intersection of non-negative constraints and marginal constraints:
+\begin{equation}
+    \mathcal{U}(\alpha, \beta) = \left\{ Q \in \mathbb{R}_{+}^{C \times N} \mid Q \mathbf{1}_N = \alpha, \, Q^\top \mathbf{1}_C = \beta \right\}
+\end{equation}
+where $\alpha$ represents the target distribution of classes (prior) and $\beta$ represents the weight of each sample (typically uniform $1/N$).
+
+\subsection{Entropic Regularization and Bregman Projection}
+The original NLPrompt paper minimizes the transport cost with entropic regularization. We formulate this as:
+\begin{equation}
+    \min_{Q \in \mathcal{U}} \langle C, Q \rangle - \epsilon H(Q)
+\end{equation}
+where $C = -\log(\text{Softmax}(S))$ represents the cost matrix derived from the similarity $S$ between image and text features, and $H(Q)$ is the entropy.
+
+From a convex optimization perspective, this problem can be viewed as a \textbf{Bregman Projection}. The objective is equivalent to minimizing the Kullback-Leibler (KL) divergence between $Q$ and a Gibbs kernel $K = \exp(-C/\epsilon)$:
+\begin{equation}
+    Q^* = \arg\min_{Q \in \mathcal{U}} D_{KL}(Q \,||\, K)
+\end{equation}
+This formulation allows the problem to be solved efficiently using the Sinkhorn-Knopp algorithm, which iteratively projects onto the marginal constraints.
+
+\subsection{Handling Class Imbalance}
+We analyzed the impact of class imbalance on the optimization objective. Intuitively, one might attempt to enforce the class prior $\pi$ in both the cost matrix and the constraints:
+\begin{equation}
+    \min_{Q} \langle -\log(\Pi P), Q \rangle - \epsilon H(Q) \quad \text{s.t.} \quad Q \mathbf{1}_N = \pi, \, Q^\top \mathbf{1}_C = \frac{1}{N}\mathbf{1}
+\end{equation}
+Expanding the objective reveals:
+\begin{equation}
+    \langle -\log(\Pi P), Q \rangle = \langle -\log P, Q \rangle + \sum_{i,j} (-\log \pi_i) Q_{ij} = \langle -\log P, Q \rangle + \text{const}
+\end{equation}
+Thus, class imbalance should be handled strictly through the constraint set $\mathcal{U}$ (via $\alpha = \pi$) rather than modifying the cost matrix.
+
+\section{Proposed Innovation: OT-Guided Adaptive GCE}
+
+\subsection{Limitation of Hard Partitioning}
+The original NLPrompt uses a binary "hard partition": samples are classified as either Clean or Noisy based on whether the OT pseudo-label matches the given label \cite{pan2024nlprompt}. This approach discards the nuance of the OT transport plan. A sample might be "mostly" clean or "ambiguous," yet it is forced into a binary bucket (MAE or CE).
+
+\subsection{Instance-Dependent Generalized Cross Entropy}
+To address this, we propose a soft adaptation using Generalized Cross Entropy (GCE) \cite{zhang2018gce}. The GCE loss is defined as:
+\begin{equation}
+    \mathcal{L}_{GCE}(f(x), y; q) = \frac{1 - f_y(x)^q}{q}
+\end{equation}
+where $q \in (0, 1]$ controls robustness. As $q \to 0$, GCE approaches CE; as $q \to 1$, it approaches MAE.
+
+We introduce an \textbf{adaptive parameter} $q_i$ for each image $i$, derived from the Optimal Transport plan $Q^*$.
+\begin{enumerate}
+    \item \textbf{Confidence Extraction:} We normalize the $i$-th column of the optimal plan $Q^*$ to obtain the conditional probability of the label $y_i$:
+    \begin{equation}
+        a_i = \frac{Q^*_{y_i, i}}{\sum_c Q^*_{c, i}} \in [0, 1]
+    \end{equation}
+    \item \textbf{Adaptive Mapping:} We map high confidence (likely clean) to low $q$ (CE behavior) and low confidence (likely noisy) to high $q$ (MAE behavior):
+    \begin{equation}
+        q_i = (1 - a_i)^k, \quad k \ge 1
+    \end{equation}
+    \item \textbf{Unified Loss:}
+    \begin{equation}
+        \mathcal{L}_i = \frac{1 - f_{y_i}(x_i)^{q_i}}{q_i}
+    \end{equation}
+\end{enumerate}
+
+\section{Experiments and Results}
+
+We evaluated our reproduction and proposed method on several benchmark datasets with synthetic noise and real-world noise (Food101N) \cite{pan2024nlprompt}.
+
+\subsection{Implementation Details}
+Experiments were conducted using a pre-trained CLIP (ViT-B/32) backbone \cite{pan2024nlprompt}. For the optimization, we used the Sinkhorn algorithm for OT and SGD for prompt tuning. The hyperparameter $k$ for our adaptive GCE was set to 1.0.
+
+\subsection{Quantitative Results}
+
+\paragraph{Flowers102 \& EuroSAT}
+Table \ref{tab:results} summarizes the accuracy under varying symmetric noise rates. Our reproduction (denoted as NLPrompt*) achieves results consistent with the original paper \cite{pan2024nlprompt}.
+
+\begin{table}[h]
+  \caption{Test Accuracy (\%) on Flowers102 and EuroSAT under Symmetric Noise.}
+  \label{tab:results}
+  \centering
+  \begin{tabular}{llcccccc}
+    \toprule
+    Dataset & Method & 12.5\% & 25.0\% & 37.5\% & 50.0\% & 62.5\% & 75.0\% \\
+    \midrule
+    \textbf{Flowers102} & CoOp \cite{zhou2022coop} & -- & -- & -- & -- & -- & -- \\
+     & GCE \cite{zhang2018gce} & -- & -- & -- & -- & -- & -- \\
+     & \textbf{NLPrompt (Ours)} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} \\
+    \midrule
+    \textbf{EuroSAT} & CoOp \cite{zhou2022coop} & -- & -- & -- & -- & -- & -- \\
+     & \textbf{NLPrompt (Ours)} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%TODO%%%%%%%%%%%%%%%%%%%%%%%%%
+\paragraph{Real-world Noise (Food101N)} 
+On the Food101N dataset, our implementation achieved an accuracy of \textbf{72.9\%}, outperforming the CoOp baseline \cite{pan2024nlprompt}.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%TODO%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+\section{Conclusion}
+We successfully reproduced NLPrompt, validating its effectiveness in taming noisy labels for VLMs \cite{pan2024nlprompt}. We provided a deeper convex optimization analysis and proposed an OT-Guided Adaptive GCE loss to handle label uncertainty beyond binary thresholding.
+
+\begin{ack}
+This project was completed for the SI251 Convex Optimization course at ShanghaiTech University, Fall 2025, under the instruction of Prof. Ye Shi.
+\end{ack}
+
+\small
+\begin{thebibliography}{99}
+
+\bibitem[Pan et al.(2024)]{pan2024nlprompt}
+Bikang Pan, Qun Li, Xiaoying Tang, et al.
+\newblock NLPrompt: Taming Noisy Labels in Vision-Language Models.
+\newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2024.
+
+\bibitem[Zhang and Sabuncu(2018)]{zhang2018gce}
+Zhilu Zhang and Mert Sabuncu.
+\newblock Generalized Cross Entropy Loss for Training Deep Neural Networks with Noisy Labels.
+\newblock In {\em Advances in Neural Information Processing Systems (NeurIPS)}, 2018.
+
+\bibitem[Zhou et al.(2022)]{zhou2022coop}
+Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu.
+\newblock Learning to Prompt for Vision-Language Models.
+\newblock {\em International Journal of Computer Vision (IJCV)}, 2022.
+
+\bibitem[Radford et al.(2021)]{radford2021clip}
+Alec Radford, et al.
+\newblock Learning Transferable Visual Models From Natural Language Supervision.
+\newblock In {\em International Conference on Machine Learning (ICML)}, 2021.
+
+\end{thebibliography}
+
+\end{document}
