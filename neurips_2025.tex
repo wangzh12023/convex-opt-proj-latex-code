@@ -4,8 +4,16 @@
 \usepackage{amsmath}
 \PassOptionsToPackage{numbers, compress}{natbib}
 
+% Ensure legacy NeurIPS internal macro exists (fixes: Undefined control sequence \@noticestring -> \@trackname)
+\makeatletter
+\@ifundefined{@trackname}{\def\@trackname{}}{}
+\makeatother
+
+% Compile: run `pdflatex neurips_2025.tex` then `bibtex neurips_2025` then
+% `pdflatex neurips_2025.tex` twice to resolve citations/refs.
+
 % Load NeurIPS style
-\usepackage[preprint]{neurips_2025}
+\usepackage[final]{neurips_2025}
 
 % Core packages
 \usepackage[utf8]{inputenc}
@@ -38,6 +46,7 @@
   School of Information Science and Technology\\
   ShanghaiTech University \\
   \texttt{\{wangzh12023, zhongzhch2023, liuyx2023, lihy2023\}@shanghaitech.edu.cn} \\
+  \url{https://github.com/wangzh12023/NLPrompt}
 }
 
 \begin{document}
@@ -45,11 +54,15 @@
 \maketitle
 
 \begin{abstract}
-    Vision-Language Models (VLMs) like CLIP have revolutionized representation learning. However, prompt learning methods designed for these models remain vulnerable to noisy labels in downstream tasks. This project focuses on the reproduction and extension of \textit{NLPrompt} \citep{pan2024nlprompt}, a framework that utilizes Optimal Transport (OT) to purify noisy data. From a convex optimization perspective, we provide a rigorous analysis of the OT formulation via Bregman Projections and address the challenge of class imbalance by mathematically deriving the correct marginal constraints that define the transport polytope. Furthermore, identifying that the original "hard partition" strategy can misclassify clean samples as noisy (particularly in low-noise regimes), we propose a novel improvement: \textbf{OT-Guided Adaptive Generalized Cross Entropy (OT-AdaGCE)}. Instead of a binary separation that forces potentially clean data into an inefficient MAE loss, our method dynamically adjusts the robustness parameter $q$ based on OT confidence scores. This allows for a smooth transition between noise-robustness and learning efficiency. Our experimental results on benchmarks including Flowers102, DTD, and EuroSAT demonstrate the efficacy of the reproduction and the potential of the proposed soft-weighting mechanism.
+    Vision-Language Models (VLMs) like CLIP have revolutionized representation learning. However, prompt learning methods designed for these models remain vulnerable to noisy labels in downstream tasks. This project focuses on the reproduction and extension of \textit{NLPrompt} \cite{pan2024nlprompt}, a framework that utilizes Optimal Transport (OT) to purify noisy data. From a convex optimization perspective, we provide a rigorous analysis of the OT formulation via Bregman Projections and address the challenge of class imbalance by mathematically deriving the correct marginal constraints that define the transport polytope. Furthermore, identifying that the original "hard partition" strategy can misclassify clean samples as noisy (particularly in low-noise regimes), we propose a novel improvement: \textbf{OT-Guided Adaptive Generalized Cross Entropy (OT-AdaGCE)}. Instead of a binary separation that forces potentially clean data into an inefficient MAE loss, our method dynamically adjusts the robustness parameter $q$ based on OT confidence scores. This allows for a smooth transition between noise-robustness and learning efficiency. Our experimental results on benchmarks including Flowers102, DTD, and EuroSAT demonstrate the efficacy of the reproduction and the potential of the proposed soft-weighting mechanism.
 \end{abstract}
 \section{Introduction}
 
+
+
+% NOTE: For citations, use \cite for all references (natbib not loaded)
 The advent of Vision-Language Models (VLMs) such as CLIP has bridged the gap between visual and textual data. Prompt learning has emerged as a parameter-efficient fine-tuning method for these models \cite{pan2024nlprompt}. However, real-world datasets are inherently noisy, and standard Cross-Entropy (CE) loss is known to overfit to incorrect labels, leading to significant performance degradation.
+
 
 The paper \textit{NLPrompt: Noise-Label Prompt Learning for Vision-Language Models} \cite{pan2024nlprompt} addresses this challenge by employing Optimal Transport (OT) to align image features with text prototypes globally, thereby identifying and "purifying" noisy labels. The original method partitions data into "clean" and "noisy" subsets based on OT results, applying CE loss to the former and a robust Mean Absolute Error (MAE) loss to the latter \cite{zhang2018gce}. While effective, this binary "hard partition" strategy is heuristic and discards the fine-grained confidence information contained in the optimal transport plan. Furthermore, the original formulation lacks a rigorous derivation regarding how to correctly handle class imbalance.
 
@@ -59,12 +72,10 @@ In this project, we aim to:
     \item \textbf{Analyze} the theoretical underpinnings of the OT formulation from a convex optimization perspective. We explicitly formulate the entropic-regularized OT problem as a Bregman Projection of the Gibbs kernel onto the transport polytope, and mathematically derive the correct marginal constraints to incorporate class priors for handling class imbalance.
     \item \textbf{Propose} an incremental innovation: OT-Guided Adaptive Generalized Cross Entropy (OT-AdaGCE). We replace the heuristic hard thresholding with a smooth, instance-dependent weighting mechanism that dynamically adjusts the robustness parameter $q$ based on transport confidence, mitigating the information loss inherent in binary partitioning.
 \end{enumerate}
+
 % \section{Introduction}
-
-% The advent of Vision-Language Models (VLMs) such as CLIP has bridged the gap between visual and textual data \cite{pan2024nlprompt}. Prompt learning has emerged as a parameter-efficient fine-tuning method for these models \cite{pan2024nlprompt}. However, real-world datasets are inherently noisy, and standard Cross-Entropy (CE) loss is known to overfit to incorrect labels, leading to performance degradation \cite{pan2024nlprompt}.
-
-% The paper \textit{NLPrompt: Taming Noisy Labels in Vision-Language Models} \cite{pan2024nlprompt} addresses this by employing Optimal Transport (OT) to align image features with text prototypes, thereby identifying and "purifying" noisy labels. The original method partitions data into "clean" and "noisy" subsets, applying CE loss to the former and Mean Absolute Error (MAE) loss to the latter \cite{pan2024nlprompt, zhang2018gce}.
-
+% The advent of Vision-Language Models (VLMs) such as CLIP has bridged the gap between visual and textual data \citep{pan2024nlprompt}. Prompt learning has emerged as a parameter-efficient fine-tuning method for these models \citep{pan2024nlprompt}. However, real-world datasets are inherently noisy, and standard Cross-Entropy (CE) loss is known to overfit to incorrect labels, leading to performance degradation \citep{pan2024nlprompt}.
+% The paper \textit{NLPrompt: Taming Noisy Labels in Vision-Language Models} \citep{pan2024nlprompt} addresses this by employing Optimal Transport (OT) to align image features with text prototypes, thereby identifying and "purifying" noisy labels. The original method partitions data into "clean" and "noisy" subsets, applying CE loss to the former and Mean Absolute Error (MAE) loss to the latter \citep{pan2024nlprompt, zhang2018gce}.
 % In this project, we aim to:
 % \begin{enumerate}
 %     \item \textbf{Replicate} the NLPrompt framework and verify its performance on standard benchmarks.
@@ -291,25 +302,22 @@ The complete proposed algorithm is detailed in Algorithm~\ref{alg:softnlp}.
 
 % \subsection{Implementation Details of Reproduced Methods}
 
-% We re-implemented four distinct approaches to provide a comprehensive comparison against our proposed OT-Guided Adaptive GCE:
 
+% We re-implemented four distinct approaches to provide a comprehensive comparison against our proposed OT-Guided Adaptive GCE:
 % \paragraph{CoOp (Context Optimization).}
 % We reproduced CoOp by introducing $M=16$ learnable prompt tokens in the textual branch. The implementation
 % follows the "unified context" design from \textit{MaPLe},
 % where prompts are optimized using standard Cross-Entropy loss.
 % This serves as our primary baseline to demonstrate the performance degradation caused by noisy labels.
-
 % \paragraph{GCE (Generalized Cross Entropy).}
 % We integrated the GCE loss function into the training loop as a robust alternative to standard CE.
 % By setting the noise-robust parameter $q=0.7$, we verified its ability to
 % mitigate the impact of outliers, though it lacks the instance-specific adaptability of our proposed method.
-
 % \paragraph{JoAPR (Joint Agreement-based Purification).}
 % Drawing inspiration from the \textbf{PromptSRC}  self-regulation mechanism,
 % we implemented JoAPR to utilize the consensus between different views of the data.
 % We leveraged the deep prompting architecture from \textit{VPT} to increase the model's
 % capacity to learn clean patterns before the noise dominates the gradients.
-
 % \paragraph{NLPrompt (Original Framework).}
 % The core reproduction of NLPrompt involved implementing the \textbf{Optimal Transport (OT) purification layer}.
 % We utilized the \textit{Sinkhorn-Knopp algorithm} to solve the entropic-regularized OT
@@ -519,15 +527,9 @@ The complete proposed algorithm is detailed in Algorithm~\ref{alg:softnlp}.
 % \end{table}
 
 
-
-
-% <<<<<<< HEAD
-% =======
-
-% >>>>>>> bcb03d975c217b355bfd0d59d55c1ad9907a9950
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%TODO%%%%%%%%%%%%%%%%%%%%%%%%%
 % \paragraph{Real-world Noise (Food101N)}
-% On the Food101N dataset, our implementation achieved an accuracy of \textbf{72.9\%}, outperforming the CoOp baseline \cite{pan2024nlprompt}.
+% On the Food101N dataset, our implementation achieved an accuracy of \textbf{72.9\%}, outperforming the CoOp baseline \citep{pan2024nlprompt}.
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%TODO%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Reproduction of NLPrompt}
 \label{sec:reproduction}
@@ -753,17 +755,21 @@ As shown in Table~\ref{tab:innovation_food101n}, our method achieves an accuracy
         Accuracy & 66.9\% & 72.7\% & 72.5\% & \textbf{72.9\%} & 70.9\% \\ 
         \bottomrule
     \end{tabular}
->>>>>>> bcb03d975c217b355bfd0d59d55c1ad9907a9950
 \end{table}
 
 \section{Conclusion}
-In this project, we successfully reproduced \textit{NLPrompt}, validating its effectiveness against noisy labels in VLMs. From a convex optimization perspective, we rigorously analyzed the OT formulation via Bregman Projections and derived the appropriate method to handle class imbalance. Finally, to overcome the information loss in "hard partitioning", we proposed \textbf{OT-Guided Adaptive GCE}, a soft-weighting strategy that dynamically adjusts loss robustness based on optimal transport confidence.
+In this project, we successfully reproduced \textit{NLPrompt}, validating its effectiveness against noisy labels in VLMs. From a convex optimization perspective, we rigorously analyzed the OT formulation via Bregman Projections and addressed the challenge of class imbalance by mathematically deriving the correct marginal constraints that define the transport polytope. Finally, to overcome the information loss in "hard partitioning", we proposed \textbf{OT-Guided Adaptive Generalized Cross Entropy (OT-AdaGCE)}, a soft-weighting strategy that dynamically adjusts loss robustness based on optimal transport confidence.
 
 \begin{ack}
     This project was completed for the SI251 Convex Optimization course at ShanghaiTech University, Fall 2025, under the instruction of Prof. Ye Shi.
+
+% NOTE: Rerun LaTeX to update cross-references and outlines if you see warnings.
 \end{ack}
 
 \small
+\clearpage
+\bibliographystyle{plainnat} % ensure natbib-compatible style for BibTeX runs
+
 \begin{thebibliography}{99}
 
     \bibitem[Pan et al.(2024)]{pan2024nlprompt}
@@ -802,5 +808,7 @@ In this project, we successfully reproduced \textit{NLPrompt}, validating its ef
     \newblock In {\em Proceedings of the European Conference on Computer Vision (ECCV)}, 2022.
 
 \end{thebibliography}
+
+% NOTE: If you see warnings about labels or outlines, rerun LaTeX to update cross-references and outlines.
 
 \end{document}
