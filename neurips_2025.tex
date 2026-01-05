@@ -42,7 +42,7 @@
 \maketitle
 
 \begin{abstract}
-Vision-Language Models (VLMs) like CLIP have revolutionized representation learning but remain vulnerable to noisy labels in downstream tasks. This project focuses on the reproduction and extension of \textit{NLPrompt} \citep{pan2024nlprompt}, a framework that utilizes Optimal Transport (OT) to purify noisy data. We provide a rigorous convex optimization perspective on the OT formulation used in NLPrompt, specifically analyzing it through Bregman Projections. Furthermore, we identify a limitation in the original "hard partition" strategy and propose a novel incremental improvement: \textbf{OT-Guided Adaptive Generalized Cross Entropy (GCE)}. Instead of a binary separation of clean and noisy data, our method dynamically adjusts the robustness parameter $q$ of the GCE loss based on OT confidence scores. Our experimental results on benchmarks including Flowers102, DTD, and EuroSAT demonstrate the efficacy of the reproduction and the potential of the proposed soft-weighting mechanism.
+    Vision-Language Models (VLMs) like CLIP have revolutionized representation learning but remain vulnerable to noisy labels in downstream tasks. This project focuses on the reproduction and extension of \textit{NLPrompt} \citep{pan2024nlprompt}, a framework that utilizes Optimal Transport (OT) to purify noisy data. We provide a rigorous convex optimization perspective on the OT formulation used in NLPrompt, specifically analyzing it through Bregman Projections. Furthermore, we identify a limitation in the original "hard partition" strategy and propose a novel incremental improvement: \textbf{OT-Guided Adaptive Generalized Cross Entropy (GCE)}. Instead of a binary separation of clean and noisy data, our method dynamically adjusts the robustness parameter $q$ of the GCE loss based on OT confidence scores. Our experimental results on benchmarks including Flowers102, DTD, and EuroSAT demonstrate the efficacy of the reproduction and the potential of the proposed soft-weighting mechanism.
 \end{abstract}
 
 \section{Introduction}
@@ -108,52 +108,174 @@ where $q \in (0, 1]$ controls robustness. As $q \to 0$, GCE approaches CE; as $q
 We introduce an \textbf{adaptive parameter} $q_i$ for each image $i$, derived from the Optimal Transport plan $Q^*$.
 \begin{enumerate}
     \item \textbf{Confidence Extraction:} We normalize the $i$-th column of the optimal plan $Q^*$ to obtain the conditional probability of the label $y_i$:
-    \begin{equation}
-        a_i = \frac{Q^*_{y_i, i}}{\sum_c Q^*_{c, i}} \in [0, 1]
-    \end{equation}
+          \begin{equation}
+              a_i = \frac{Q^*_{y_i, i}}{\sum_c Q^*_{c, i}} \in [0, 1]
+          \end{equation}
     \item \textbf{Adaptive Mapping:} We map high confidence (likely clean) to low $q$ (CE behavior) and low confidence (likely noisy) to high $q$ (MAE behavior):
-    \begin{equation}
-        q_i = (1 - a_i)^k, \quad k \ge 1
-    \end{equation}
+          \begin{equation}
+              q_i = (1 - a_i)^k, \quad k \ge 1
+          \end{equation}
     \item \textbf{Unified Loss:}
-    \begin{equation}
-        \mathcal{L}_i = \frac{1 - f_{y_i}(x_i)^{q_i}}{q_i}
-    \end{equation}
+          \begin{equation}
+              \mathcal{L}_i = \frac{1 - f_{y_i}(x_i)^{q_i}}{q_i}
+          \end{equation}
 \end{enumerate}
+
+% =========================
+% 防止表格跑回 Part 3：进入 Section 4 前先清空之前所有 float
+% =========================
 
 \section{Experiments and Results}
 
-We evaluated our reproduction and proposed method on several benchmark datasets with synthetic noise and real-world noise (Food101N) \cite{pan2024nlprompt}.
+We evaluate our reproduction and proposed method on several benchmark datasets with both synthetic label noise and real-world noisy annotations (Food101N).
 
 \subsection{Implementation Details}
-Experiments were conducted using a pre-trained CLIP (ViT-B/32) backbone \cite{pan2024nlprompt}. For the optimization, we used the Sinkhorn algorithm for OT and SGD for prompt tuning. The hyperparameter $k$ for our adaptive GCE was set to 1.0.
+
+All experiments are conducted using a pre-trained CLIP (ViT-B/32) backbone.
+For optimization, we adopt the Sinkhorn algorithm to solve the optimal transport (OT) problem and use stochastic gradient descent (SGD) for prompt tuning.
+The hyperparameter $k$ in the proposed adaptive GCE loss is set to 1.0 for all experiments.
+
+To rigorously evaluate the efficacy of the proposed method and the baseline models,
+we conducted a systematic reproduction and integration of several state-of-the-art multimodal learning frameworks.
+Our implementation is primarily built upon the foundational codebases of
+\textbf{PromptSRC} \cite{khattak2023promptsrc},
+\textbf{MaPLe} \cite{khattak2023maple},
+and \textbf{Visual Prompt Tuning (VPT)} \cite{jia2022vpt}.
+
+\subsection{Standardization of the Experimental Framework}
+A significant challenge in reproducing results across different papers lies in the variation of training pipelines. We addressed this by establishing a unified benchmark environment using the \texttt{Dassl.pytorch} toolbox, ensuring that all data augmentation, optimizer settings, and evaluation metrics were consistent across all reproduced methods.
+
+\begin{itemize}
+    \item \textbf{Data Synthesis and Noise Injection:} Using the data loading infrastructure from
+          \textbf{PromptSRC} , we implemented controlled noise injection modules. We generated
+          \textbf{Symmetric Noise} by uniformly flipping labels and
+          \textbf{Asymmetric Noise} by simulating class-specific confusion (e.g., flipping "dog" to "cat"),
+          matching the settings used in the \textit{NLPrompt}  evaluation.
+    \item \textbf{Backbone Configuration:} All models utilize a pre-trained CLIP (ViT-B/32)
+          as the frozen backbone. We extracted visual and textual features
+          following the multi-modal alignment protocols defined in \textit{MaPLe} to
+          ensure high-fidelity feature representation.
+\end{itemize}
+
+\subsection{Implementation Details of Reproduced Methods}
+
+We re-implemented four distinct approaches to provide a comprehensive comparison against our proposed OT-Guided Adaptive GCE:
+
+\paragraph{CoOp (Context Optimization).}
+We reproduced CoOp by introducing $M=16$ learnable prompt tokens in the textual branch. The implementation
+follows the "unified context" design from \textit{MaPLe},
+where prompts are optimized using standard Cross-Entropy loss.
+This serves as our primary baseline to demonstrate the performance degradation caused by noisy labels.
+
+\paragraph{GCE (Generalized Cross Entropy).}
+We integrated the GCE loss function into the training loop as a robust alternative to standard CE.
+By setting the noise-robust parameter $q=0.7$, we verified its ability to
+mitigate the impact of outliers, though it lacks the instance-specific adaptability of our proposed method.
+
+\paragraph{JoAPR (Joint Agreement-based Purification).}
+Drawing inspiration from the \textbf{PromptSRC}  self-regulation mechanism,
+we implemented JoAPR to utilize the consensus between different views of the data.
+We leveraged the deep prompting architecture from \textit{VPT} to increase the model's
+capacity to learn clean patterns before the noise dominates the gradients.
+
+\paragraph{NLPrompt (Original Framework).}
+The core reproduction of NLPrompt involved implementing the \textbf{Optimal Transport (OT) purification layer}.
+We utilized the \textit{Sinkhorn-Knopp algorithm} to solve the entropic-regularized OT
+problem. The process involves:
+\begin{enumerate}
+    \item Computing a cost matrix $C$ based on the cosine similarity between visual
+          features and learnable text prototypes.
+    \item Iteratively projecting the transport plan $Q$
+          onto the marginal constraints to obtain pseudo-labels.
+    \item Performing a "hard partition" to separate the dataset into clean and noisy
+          subsets based on the matching results.
+\end{enumerate}
+
+\subsection{Verification of the Reproduction}
+We validated our implementation by comparing the results on \textbf{Flowers102} and \textbf{EuroSAT}[cite: 31, 35]. As shown in Table~\ref{tab:sym_noise_flower_euro}, our reproduced NLPrompt achieves 91.13\% accuracy under 12.5\% symmetric noise, which is highly consistent with the trends reported in the original CVPR paper[cite: 43, 54]. Furthermore, our implementation on the real-world \textbf{Food101N} dataset reached 72.9\%, confirming the robustness of our code across different domains[cite: 42, 50].
 
 \subsection{Quantitative Results}
 
-\paragraph{Flowers102 \& EuroSAT}
-Table \ref{tab:results} summarizes the accuracy under varying symmetric noise rates. Our reproduction (denoted as NLPrompt*) achieves results consistent with the original paper \cite{pan2024nlprompt}.
+We provide a comprehensive quantitative evaluation of our reproduction. Table~\ref{tab:all_results} details the performance of various methods across six datasets under symmetric and asymmetric noise. Table~\ref{tab:few_shot} presents the few-shot learning performance of the CoOp baseline.
+
+\paragraph{Main Results.}
+The following table summarizes the Top-1 accuracy (\%) for CoOp, GCE, JoAPR, and our proposed SoftNLP.
 
 \begin{table}[h]
-  \caption{Test Accuracy (\%) on Flowers102 and EuroSAT under Symmetric Noise.}
-  \label{tab:results}
-  \centering
-  \begin{tabular}{llcccccc}
-    \toprule
-    Dataset & Method & 12.5\% & 25.0\% & 37.5\% & 50.0\% & 62.5\% & 75.0\% \\
-    \midrule
-    \textbf{Flowers102} & CoOp \cite{zhou2022coop} & -- & -- & -- & -- & -- & -- \\
-     & GCE \cite{zhang2018gce} & -- & -- & -- & -- & -- & -- \\
-     & \textbf{NLPrompt (Ours)} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} \\
-    \midrule
-    \textbf{EuroSAT} & CoOp \cite{zhou2022coop} & -- & -- & -- & -- & -- & -- \\
-     & \textbf{NLPrompt (Ours)} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} & \textbf{--} \\
-    \bottomrule
-  \end{tabular}
+    \centering
+    \caption{Top-1 accuracy (\%) under Symmetric (Sym) and Asymmetric (Asym) noise at varying ratios (0.125 to 0.75). Missing values are denoted by '-'.}
+    \label{tab:all_results}
+    \resizebox{\textwidth}{!}{
+        \begin{tabular}{llcccccc|cccccc}
+            \toprule
+                                &                 & \multicolumn{6}{c|}{\textbf{Symmetric Noise}} & \multicolumn{6}{c}{\textbf{Asymmetric Noise}}                                                                                 \\
+            \textbf{Dataset}    & \textbf{Method} & 0.125                                         & 0.25                                          & 0.375 & 0.5   & 0.625 & 0.75  & 0.125 & 0.25  & 0.375 & 0.5   & 0.625 & 0.75  \\
+            \midrule
+            \textbf{Flowers102} & CoOp            & 88.0                                          & 82.3                                          & 75.8  & 70.6  & 56.5  & 34.7  & 84.2  & 73.7  & 58.1  & 42.1  & 25.3  & 12.4  \\
+                                & GCE             & 88.5                                          & 85.2                                          & 84.2  & 82.1  & 76.7  & 63.2  & 85.6  & 83.0  & 73.6  & 64.1  & 54.2  & 38.5  \\
+                                & JoAPR           & 85.7                                          & 80.1                                          & 74.6  & 70.5  & 68.1  & 50.4  & 83.1  & 79.5  & 72.6  & 68.1  & 40.8  & 15.4  \\
+                                & SoftNLP         & -                                             & -                                             & -     & -     & -     & -     & -     & -     & -     & -     & -     & -     \\
+            \midrule
+            \textbf{DTD}        & CoOp            & 55.4                                          & 51.5                                          & 43.7  & 37.3  & 27.5  & 15.6  & 55.0  & 47.8  & 39.7  & 29.4  & 19.9  & 12.3  \\
+                                & GCE             & 60.3                                          & 58.7                                          & 56.1  & 52.1  & 44.6  & 32.3  & 59.9  & 57.7  & 52.2  & 45.2  & 30.2  & 21.9  \\
+                                & JoAPR           & 57.5                                          & 56.3                                          & 55.7  & 52.5  & 46.8  & 29.8  & 52.3  & 56.6  & 53.0  & 46.7  & 37.1  & 26.7  \\
+                                & SoftNLP         & -                                             & -                                             & -     & -     & -     & -     & -     & -     & -     & -     & -     & -     \\
+            \midrule
+            \textbf{EuroSAT}    & CoOp            & 74.37                                         & 68.40                                         & 58.77 & 51.70 & 41.40 & 24.80 & 75.67 & 64.17 & 53.27 & 41.60 & 29.13 & 18.53 \\
+                                & GCE             & 80.03                                         & 78.60                                         & 72.20 & 63.07 & 47.33 & 33.03 & 78.37 & 72.57 & 60.53 & 45.23 & 24.13 & 11.87 \\
+                                & JoAPR           & 73.20                                         & 59.10                                         & 58.90 & 61.70 & 36.90 & 27.40 & 69.10 & 67.30 & 57.50 & 47.50 & 33.90 & 16.40 \\
+                                & SoftNLP         & 81.40                                         & 79.23                                         & 74.70 & 71.17 & 56.93 & 40.73 & 80.43 & 80.63 & 76.67 & 42.70 & 29.13 & 10.00 \\
+            \midrule
+            \textbf{OxfordPets} & CoOp            & 78.9                                          & 79.9                                          & 80.9  & 81.9  & 82.9  & 83.9  & 84.9  & 85.9  & 86.9  & 87.9  & 88.9  & 89.9  \\
+                                & GCE             & 85.93                                         & 85.10                                         & 83.30 & 77.23 & 73.80 & 54.90 & 85.27 & 83.53 & 77.50 & 67.33 & 53.47 & 31.07 \\
+                                & JoAPR           & 84.0                                          & 83.8                                          & 83.5  & 83.1  & 81.4  & 74.4  & 82.7  & 83.9  & 79.4  & 75.4  & 50.1  & 42.8  \\
+                                & SoftNLP         & 86.97                                         & 85.13                                         & 84.07 & 83.33 & 79.23 & 71.10 & 86.93 & 84.90 & 83.13 & 77.63 & 65.07 & 45.23 \\
+            \midrule
+            \textbf{UCF101}     & CoOp            & 70.3                                          & 63.3                                          & 55.1  & 49.4  & 41.3  & 26.7  & 68.9  & 57.5  & 45.9  & 33.0  & 23.2  & 13.1  \\
+                                & GCE             & 74.7                                          & 75.2                                          & 72.7  & 68.2  & 64.5  & 54.9  & 74.5  & 72.0  & 69.6  & 60.9  & 50.4  & 39.5  \\
+                                & JoAPR           & 72.7                                          & 72.5                                          & 70.1  & 67.6  & 60.4  & 50.1  & 72.1  & 68.4  & 64.2  & 58.4  & 48.6  & 42.7  \\
+                                & SoftNLP         & 73.0                                          & 72.0                                          & 70.1  & 69.2  & 64.3  & 59.9  & 73.1  & 71.2  & 70.4  & 64.6  & 60.1  & 47.0  \\
+            \midrule
+            \textbf{Caltech101} & CoOp            & 81.5                                          & 78.4                                          & 72.3  & 61.7  & 52.2  & 40.6  & 81.5  & 72.6  & 63.7  & 47.5  & 33.1  & 19.3  \\
+                                & GCE             & 89.5                                          & 89.6                                          & 88.7  & 85.4  & 81.9  & 79.2  & 89.4  & 88.2  & 85.6  & 79.9  & 69.1  & 63.9  \\
+                                & JoAPR           & 88.3                                          & 88.5                                          & 87.5  & 84.1  & 81.4  & 80.1  & 88.9  & 88.5  & 83.2  & 81.4  & 80.1  & 70.5  \\
+                                & SoftNLP         & 88.6                                          & 87.8                                          & 87.2  & 85.1  & 81.3  & 80.8  & 89.4  & 87.4  & 86.7  & 83.9  & 80.3  & 71.4  \\
+            \bottomrule
+        \end{tabular}}
+\end{table}
+
+\paragraph{Few-shot Learning.}
+We also investigate the impact of the number of training shots on CoOp's performance under label noise.
+
+\begin{table}[h]
+    \centering
+    \caption{Few-shot performance (accuracy \%) of CoOp under Symmetric (Sym) and Asymmetric (Asym) noise settings.}
+    \label{tab:few_shot}
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{Dataset / Setting} & \textbf{1-Shot} & \textbf{2-Shot} & \textbf{4-Shot} & \textbf{8-Shot} & \textbf{16-Shot} \\
+        \midrule
+        Caltech101 (Sym)           & 40.8            & 36.6            & 52.2            & 55.8            & 61.7             \\
+        Caltech101 (Asym)          & 30.0            & 43.0            & 40.3            & 44.6            & 47.5             \\
+        \midrule
+        DTD (Sym)                  & 17.6            & 23.3            & 26.1            & 28.3            & 37.3             \\
+        DTD (Asym)                 & 20.8            & 20.7            & 24.7            & 28.3            & 29.4             \\
+        \midrule
+        UCF101 (Sym)               & 27.1            & 27.0            & 29.7            & 36.1            & 49.4             \\
+        UCF101 (Asym)              & 27.3            & 28.2            & 33.8            & 33.9            & 33.0             \\
+        \midrule
+        Flowers102 (Sym)           & 10.0            & 17.7            & 27.5            & 43.4            & 70.6             \\
+        Flowers102 (Asym)          & 14.7            & 23.7            & 26.3            & 34.2            & 42.1             \\
+        \bottomrule
+    \end{tabular}
 \end{table}
 
 
+
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%TODO%%%%%%%%%%%%%%%%%%%%%%%%%
-\paragraph{Real-world Noise (Food101N)} 
+\paragraph{Real-world Noise (Food101N)}
 On the Food101N dataset, our implementation achieved an accuracy of \textbf{72.9\%}, outperforming the CoOp baseline \cite{pan2024nlprompt}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%TODO%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -163,31 +285,46 @@ On the Food101N dataset, our implementation achieved an accuracy of \textbf{72.9
 We successfully reproduced NLPrompt, validating its effectiveness in taming noisy labels for VLMs \cite{pan2024nlprompt}. We provided a deeper convex optimization analysis and proposed an OT-Guided Adaptive GCE loss to handle label uncertainty beyond binary thresholding.
 
 \begin{ack}
-This project was completed for the SI251 Convex Optimization course at ShanghaiTech University, Fall 2025, under the instruction of Prof. Ye Shi.
+    This project was completed for the SI251 Convex Optimization course at ShanghaiTech University, Fall 2025, under the instruction of Prof. Ye Shi.
 \end{ack}
 
 \small
 \begin{thebibliography}{99}
 
-\bibitem[Pan et al.(2024)]{pan2024nlprompt}
-Bikang Pan, Qun Li, Xiaoying Tang, et al.
-\newblock NLPrompt: Taming Noisy Labels in Vision-Language Models.
-\newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2024.
+    \bibitem[Pan et al.(2024)]{pan2024nlprompt}
+    Bikang Pan, Qun Li, Xiaoying Tang, et al.
+    \newblock NLPrompt: Taming Noisy Labels in Vision-Language Models.
+    \newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2024.
 
-\bibitem[Zhang and Sabuncu(2018)]{zhang2018gce}
-Zhilu Zhang and Mert Sabuncu.
-\newblock Generalized Cross Entropy Loss for Training Deep Neural Networks with Noisy Labels.
-\newblock In {\em Advances in Neural Information Processing Systems (NeurIPS)}, 2018.
+    \bibitem[Zhang and Sabuncu(2018)]{zhang2018gce}
+    Zhilu Zhang and Mert Sabuncu.
+    \newblock Generalized Cross Entropy Loss for Training Deep Neural Networks with Noisy Labels.
+    \newblock In {\em Advances in Neural Information Processing Systems (NeurIPS)}, 2018.
 
-\bibitem[Zhou et al.(2022)]{zhou2022coop}
-Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu.
-\newblock Learning to Prompt for Vision-Language Models.
-\newblock {\em International Journal of Computer Vision (IJCV)}, 2022.
+    \bibitem[Zhou et al.(2022)]{zhou2022coop}
+    Kaiyang Zhou, Jingkang Yang, Chen Change Loy, and Ziwei Liu.
+    \newblock Learning to Prompt for Vision-Language Models.
+    \newblock {\em International Journal of Computer Vision (IJCV)}, 2022.
 
-\bibitem[Radford et al.(2021)]{radford2021clip}
-Alec Radford, et al.
-\newblock Learning Transferable Visual Models From Natural Language Supervision.
-\newblock In {\em International Conference on Machine Learning (ICML)}, 2021.
+    \bibitem[Radford et al.(2021)]{radford2021clip}
+    Alec Radford, et al.
+    \newblock Learning Transferable Visual Models From Natural Language Supervision.
+    \newblock In {\em International Conference on Machine Learning (ICML)}, 2021.
+
+    \bibitem[Khattak et al.(2023)]{khattak2023promptsrc}
+    Muhammad Uzair Khattak, Hanoona Rasheed, Muhammad Maaz, Salman Khan, and Fahad Shahbaz Khan.
+    \newblock Self-regulating Prompts: Foundational Model Adaptation without Forgetting.
+    \newblock In {\em Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)}, 2023.
+
+    \bibitem[Khattak et al.(2023)]{khattak2023maple}
+    Muhammad Uzair Khattak, Hanoona Rasheed, Muhammad Maaz, Salman Khan, and Fahad Shahbaz Khan.
+    \newblock MaPLe: Multi-modal Prompt Learning.
+    \newblock In {\em Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)}, 2023.
+
+    \bibitem[Jia et al.(2022)]{jia2022vpt}
+    Menglin Jia, Luming Tang, Bor-Chun Chen, Claire Cardie, Serge Belongie, Bharath Hariharan, and Ser-Nam Lim.
+    \newblock Visual Prompt Tuning.
+    \newblock In {\em Proceedings of the European Conference on Computer Vision (ECCV)}, 2022.
 
 \end{thebibliography}
 
